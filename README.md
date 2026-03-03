@@ -7,6 +7,7 @@
 http{s}://{ip}:{port}/Map?handler=Search?{searchType}?{number}</br></br>
 
 <b>Примеры:</b></br>
+http://localhost:5000/Map
 http://localhost:5000/Map?handler=Search?1?23:14:0000000:1107</br>
 http://localhost:5000/Map?handler=Search?7?09:07-7.108
 
