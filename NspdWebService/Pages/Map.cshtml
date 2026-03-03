@@ -1,0 +1,1661 @@
+﻿@page
+@using NspdWebService.Infrastructure.Enums
+@model NspdWebServer.Pages.MapModel
+@{
+    ViewData["Title"] = "Карта объектов";
+}
+
+<div class="container-fluid h-100 p-0" style="height: 100vh;">
+    <div class="row g-0 h-100" style="height: 100vh;">
+        <!-- Левая панель -->
+        <div id="sidebar" class="col-md-3 bg-light p-3 sidebar" style="height: 100vh; overflow-y: auto;">
+            <div class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">
+                <i class="fas fa-chevron-left" id="toggleIcon"></i>
+            </div>
+
+            <div class="sidebar-content">
+                <div class="searchPanel">
+                    <h4 class="mb-4">Поиск объектов</h4>
+
+                    <form method="post" asp-page-handler="Search" id="searchForm">
+                        <div class="mb-3">
+                            <label for="cadastralNumber" class="form-label">Кадастровый номер</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="cadastralNumber"
+                                   name="ViewModel.CadastralNumber"
+                                   value="@Model.ViewModel.CadastralNumber"
+                                   placeholder="@GetPlaceholderForType(Model.ViewModel.SearchType)"
+                                   oninput="handleCadastralNumberInput(this)"
+                                   onpaste="handleCadastralNumberPaste(event)"
+                                   onkeypress="return allowCadastralNumberKeys(event)"
+                                   required>
+
+                            <div class="form-text" id="formatDescription">
+                                <div class="mb-1">
+                                    @GetFormatDescription(Model.ViewModel.SearchType)
+                                </div>
+                                <div id="examplesContainer" class="small text-muted">
+                                    <strong>Примеры:</strong>
+                                    <div id="examplesList" class="mt-1">
+                                        @GetExamplesForType(Model.ViewModel.SearchType)
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="invalid-feedback" id="cadastralNumberError"></div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="searchType" class="form-label">Тип поиска</label>
+                            <select class="form-select"
+                                    id="searchType"
+                                    name="ViewModel.SearchType">
+                                @foreach (var option in Model.ViewModel.SearchTypeOptions)
+                                {
+                                    <option value="@option.Key"
+                                            selected="@((int)Model.ViewModel.SearchType == option.Key)">
+                                        @option.Value
+                                    </option>
+                                }
+                            </select>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(Model.ViewModel.ErrorMessage))
+                        {
+                            <div class="alert alert-danger" role="alert">
+                                @Model.ViewModel.ErrorMessage
+                            </div>
+                        }
+
+                        <button type="submit" class="btn btn-primary w-100" id="searchButton">Найти</button>
+                    </form>
+
+                    <hr class="my-4">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Управление зумом</label>
+                    <div class="input-group">
+                        <button class="btn btn-outline-secondary" type="button" onclick="changeZoom(-1)">-</button>
+                        <input type="number"
+                               class="form-control text-center"
+                               id="zoomInput"
+                               min="4"
+                               max="18"
+                               value="@Model.ViewModel.Zoom"
+                               onchange="setZoom(this.value)">
+                        <button class="btn btn-outline-secondary" type="button" onclick="changeZoom(1)">+</button>
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <button type="button" class="btn btn-outline-secondary w-100" onclick="reloadTiles()">
+                        Перезагрузить тайлы
+                    </button>
+                </div>
+
+                @if (Model.ViewModel.FeaturePropertiesForDisplay != null)
+                {
+                    <div class="mt-4">
+                        <div class="accordion" id="featureAccordion">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button"
+                                            type="button"
+                                            data-bs-toggle="collapse"
+                                            data-bs-target="#featureCollapse"
+                                            aria-expanded="true"
+                                            aria-controls="featureCollapse">
+                                        <strong>Информация об объекте</strong>
+                                    </button>
+                                </h2>
+                                <div id="featureCollapse"
+                                     class="accordion-collapse collapse show"
+                                     data-bs-parent="#featureAccordion">
+                                    <div class="accordion-body p-0">
+                                        <div class="feature-info-container" style="overflow-y: auto;">
+                                            <table class="table table-sm table-striped mb-0" style="table-layout: fixed;">
+                                                <colgroup>
+                                                    <col style="width: 200px;">
+                                                    <col style="min-width: 150px;">
+                                                </colgroup>
+                                                <tbody>
+                                                    @foreach (var property in Model.ViewModel.FeaturePropertiesForDisplay)
+                                                    {
+                                                        <tr>
+                                                            <td><strong>@property.Key:</strong></td>
+                                                            <td>@property.Value</td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @if (Model.ViewModel.MultiPolygonCoordinates != null)
+                {
+                    <div class="alert alert-success mt-3">
+                        <strong>Объект найден!</strong><br>
+                        Полигонов: @Model.ViewModel.MultiPolygonCoordinates.Count<br>
+                        @{
+                            int totalRings = Model.ViewModel.MultiPolygonCoordinates.Sum(p => p.Count);
+                            int totalPoints = Model.ViewModel.MultiPolygonCoordinates.Sum(p => p.Sum(r => r.Count));
+                        }
+                        Колец: @totalRings<br>
+                        Координат: @totalPoints<br>
+                        Центр: @Model.ViewModel.CenterX?.ToString("F2"), @Model.ViewModel.CenterY?.ToString("F2")<br>
+                        Зум: @Model.ViewModel.Zoom
+                    </div>
+                }
+
+                <hr class="my-4">
+            </div>
+        </div>
+
+        <div id="mapContainer" class="col-md-9 position-relative p-0" style="height: 100vh;">
+            <div id="map" class="w-100 h-100 position-relative" style="background-color: #e9ecef;">
+                <div id="mapPlaceholder" class="d-flex align-items-center justify-content-center h-100 w-100 position-absolute">
+                    <div class="text-center text-muted">
+                        <h4>Карта</h4>
+                        <p>Введите кадастровый номер и нажмите "Найти"</p>
+                    </div>
+                </div>
+
+                <div class="position-absolute bottom-0 end-0 bg-white px-2 py-1 small shadow-sm"
+                     style="z-index: 1000; border-top-left-radius: 4px; opacity: 0.9;">
+                    © <a href="https://www.openstreetmap.org/copyright" target="_blank"
+                         rel="noopener noreferrer">OpenStreetMap</a> contributors
+                </div>
+            </div>
+
+            <div id="mapInfo" class="position-absolute top-0 end-0 m-3 bg-white p-2 rounded shadow-sm small d-none">
+                Координаты: <span id="coordinates">0, 0</span><br>
+                Тайл: <span id="tileInfo">0, 0, 0</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Styles {
+    <style>
+        html, body {
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .container-fluid {
+            height: 100vh;
+        }
+
+        .row {
+            height: 100vh;
+        }
+
+        #map {
+            height: 100%;
+            cursor: grab;
+            position: relative;
+            overflow: hidden;
+        }
+
+            #map:active {
+                cursor: grabbing;
+            }
+
+        .tile {
+            position: absolute;
+            z-index: 1;
+        }
+
+        .polygon-hole {
+            fill: rgba(255, 255, 255, 0.7);
+            stroke: #007bff;
+            stroke-width: 1;
+            pointer-events: none;
+            z-index: 2;
+            fill-rule: evenodd;
+        }
+
+        .polygon {
+            fill: rgba(0, 123, 255, 0.3);
+            stroke: #007bff;
+            stroke-width: 2;
+            pointer-events: none;
+            z-index: 2;
+            fill-rule: evenodd;
+        }
+
+        .polygon-center {
+            fill: #dc3545;
+            stroke: white;
+            stroke-width: 2;
+            z-index: 3;
+        }
+
+        #mapInfo {
+            z-index: 1000;
+        }
+
+        #mapPlaceholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
+            background-color: #e9ecef;
+        }
+
+        svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 4;
+        }
+
+        .feature-info-container {
+            font-size: 0.875rem;
+        }
+
+            .feature-info-container table td {
+                padding: 0.25rem 0.5rem;
+                vertical-align: top;
+            }
+
+                .feature-info-container table td:first-child {
+                    width: 40%;
+                    white-space: nowrap;
+                }
+
+        .accordion-button {
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+        }
+
+            .accordion-button:not(.collapsed) {
+                background-color: rgba(0, 123, 255, 0.1);
+                color: #007bff;
+            }
+
+        #cadastralNumber {
+            font-family: 'Courier New', monospace;
+            letter-spacing: 0.5px;
+        }
+
+            #cadastralNumber.is-valid {
+                border-color: #198754;
+                background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3e%3cpath fill='%23198754' d='M2.3 6.73L.6 4.53c-.4-1.04.46-1.4 1.1-.8l1.1 1.4 3.4-3.8c.6-.63 1.6-.27 1.2.7l-4 4.6c-.43.5-.8.4-1.1.1z'/%3e%3c/svg%3e");
+                background-repeat: no-repeat;
+                background-position: right calc(0.375em + 0.1875rem) center;
+                background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+            }
+
+            #cadastralNumber.is-invalid {
+                border-color: #dc3545;
+                background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' width='12' height='12' fill='none' stroke='%23dc3545'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%23dc3545' stroke='none'/%3e%3c/svg%3e");
+                background-repeat: no-repeat;
+                background-position: right calc(0.375em + 0.1875rem) center;
+                background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+            }
+
+            #cadastralNumber.formatting {
+                animation: pulse 0.5s ease-in-out;
+            }
+
+        .example-item {
+            display: inline-block;
+            margin: 2px 4px 2px 0;
+            padding: 2px 8px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+            .example-item:hover {
+                background-color: #007bff;
+                color: white;
+                border-color: #007bff;
+                transform: translateY(-1px);
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+
+            .example-item:active {
+                transform: translateY(0);
+                box-shadow: none;
+            }
+
+        #formatDescription {
+            line-height: 1.4;
+        }
+
+            #formatDescription strong {
+                color: #495057;
+            }
+
+        #examplesContainer {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #dee2e6;
+        }
+
+            #examplesContainer strong {
+                color: #6c757d;
+                font-weight: 600;
+            }
+
+        .feature-info-container table td:first-child {
+            width: auto;
+            min-width: 200px;
+            max-width: 200px;
+            white-space: normal;
+            word-wrap: break-word;
+        }
+
+        .feature-info-container table td:last-child {
+            min-width: 150px;
+        }
+
+        .sidebar {
+            min-width: 500px;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            position: relative;
+        }
+
+            .sidebar.collapsed {
+                min-width: 0;
+                width: 0;
+                padding-right: 30px !important;
+                overflow: hidden !important;
+                flex: 0 0 0;
+            }
+
+        .sidebar-toggle {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 30px;
+            height: 30px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1001;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            border: 2px solid white;
+        }
+
+            .sidebar-toggle:hover {
+                background-color: #0056b3;
+                transform: scale(1.1);
+            }
+
+            .sidebar-toggle i {
+                font-size: 14px;
+            }
+
+        #mapContainer {
+            flex: 1;
+            transition: all 0.3s ease;
+        }
+
+        .row.g-0 {
+            display: flex;
+            overflow: hidden;
+        }
+
+        .sidebar-content {
+            width: 100%;
+            overflow-x: hidden;
+        }
+
+        .feature-info-container table {
+            table-layout: fixed;
+            width: 100%;
+        }
+    </style>
+}
+
+@section Scripts {
+    <script>
+        let config = {
+            hasData: @(Model.ViewModel.MultiPolygonCoordinates != null && Model.ViewModel.MultiPolygonCoordinates.Count > 0 ? "true" : "false"),
+            featureInfo: @(Model.ViewModel.FeatureInfo != null ? "true" : "false"),
+            zoom: @Model.ViewModel.Zoom,
+            centerX: @(Model.ViewModel.CenterX?.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "0"),
+            centerY: @(Model.ViewModel.CenterY?.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "0"),
+            multiPolygonCoordinates: @Html.Raw(Model.ViewModel.MultiPolygonCoordinates != null ?
+                Json.Serialize(Model.ViewModel.MultiPolygonCoordinates.Select(polygon =>
+                    polygon.Select(ring =>
+                        ring.Select(p => new { x = p.X, y = p.Y })
+                    )
+                )) :
+                "[]")
+        };
+
+        let mapState = {
+            isInitialized: false,
+            zoom: config.zoom,
+            centerPixelX: 0,
+            centerPixelY: 0,
+            tileSize: 256,
+            isDragging: false,
+            lastMouseX: 0,
+            lastMouseY: 0,
+            tiles: new Map(),
+            svg: null,
+            mapWidth: 0,
+            mapHeight: 0,
+            tileCache: new Map(),
+            failedTiles: new Map()
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initMapHandlers();
+
+            if (config.hasData) {
+                initMap();
+                centerOnMultiPolygon();
+                drawMultiPolygon(config.multiPolygonCoordinates);
+            } else {
+                document.getElementById('mapPlaceholder').classList.remove('d-none');
+            }
+        });
+
+        function initMapHandlers() {
+            const map = document.getElementById('map');
+
+            map.addEventListener('mousedown', function(e) {
+                if (!mapState.isInitialized) return;
+                startDragging(e);
+            });
+
+            map.addEventListener('mousemove', function(e) {
+                if (!mapState.isInitialized) return;
+                dragMap(e);
+            });
+
+            map.addEventListener('mouseup', stopDragging);
+            map.addEventListener('mouseleave', stopDragging);
+
+            map.addEventListener('wheel', function(e) {
+                if (!mapState.isInitialized) return;
+                handleZoom(e);
+            });
+
+            window.addEventListener('resize', function() {
+                if (mapState.isInitialized) {
+                    mapState.mapWidth = document.getElementById('map').offsetWidth;
+                    mapState.mapHeight = document.getElementById('map').offsetHeight;
+                    updateTilePositions();
+                    if (config.multiPolygonCoordinates.length > 0) {
+                        drawMultiPolygon(config.multiPolygonCoordinates);
+                    }
+                }
+            });
+        }
+
+        function initMap() {
+            if (mapState.isInitialized) return;
+
+            const map = document.getElementById('map');
+
+            const placeholder = document.getElementById('mapPlaceholder');
+            if (placeholder) {
+                placeholder.style.display = 'none';
+            }
+
+            mapState.mapWidth = map.offsetWidth;
+            mapState.mapHeight = map.offsetHeight;
+
+            mapState.svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            mapState.svg.setAttribute('class', 'position-absolute');
+            mapState.svg.setAttribute('style', 'pointer-events: none; z-index: 4;');
+            mapState.svg.style.width = '100%';
+            mapState.svg.style.height = '100%';
+            map.appendChild(mapState.svg);
+
+            mapState.isInitialized = true;
+        }
+
+        function centerOnMultiPolygon() {
+            if (!config.hasData || config.multiPolygonCoordinates.length === 0) return;
+
+            if (!mapState.isInitialized) {
+                initMap();
+            }
+
+            const allPoints = [];
+            for (const polygon of config.multiPolygonCoordinates) {
+                for (const ring of polygon) {
+                    for (const point of ring) {
+                        allPoints.push(point);
+                    }
+                }
+            }
+
+            if (allPoints.length === 0) return;
+
+            const center = calculateMultiPolygonCentroid(allPoints);
+            const wgs84 = webMercatorToWgs84(center.x, center.y);
+            const centerPixel = wgs84ToGlobalPixel(wgs84.lon, wgs84.lat, mapState.zoom);
+            mapState.centerPixelX = centerPixel.x;
+            mapState.centerPixelY = centerPixel.y;
+
+            updateTiles();
+            updateMapInfo();
+
+            document.getElementById('mapInfo').classList.remove('d-none');
+        }
+
+        function drawMultiPolygon(multiPolygon) {
+            if (!mapState.isInitialized) return;
+
+            const polygons = mapState.svg.querySelectorAll('.polygon, .polygon-center, .polygon-hole');
+            polygons.forEach(el => el.remove());
+
+            if (multiPolygon.length === 0) return;
+
+            for (let i = 0; i < multiPolygon.length; i++) {
+                const polygon = multiPolygon[i];
+
+                for (let j = 0; j < polygon.length; j++) {
+                    const ring = polygon[j];
+
+                    const pixelCoords = ring.map(coord => {
+                        const wgs84 = webMercatorToWgs84(coord.x, coord.y);
+                        return wgs84ToGlobalPixel(wgs84.lon, wgs84.lat, mapState.zoom);
+                    });
+
+                    const points = pixelCoords.map(p =>
+                        `${p.x - mapState.centerPixelX + mapState.mapWidth/2},${p.y - mapState.centerPixelY + mapState.mapHeight/2}`
+                    ).join(' ');
+
+                    const polygonElement = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                    polygonElement.setAttribute('points', points);
+
+                    if (j === 0) {
+                        polygonElement.setAttribute('class', 'polygon');
+                        polygonElement.style.fill = 'rgba(0, 123, 255, 0.3)';
+                        polygonElement.style.stroke = '#007bff';
+                    } else {
+                        polygonElement.setAttribute('class', 'polygon-hole');
+                        polygonElement.style.fill = 'rgba(255, 255, 255, 0.7)';
+                        polygonElement.style.stroke = '#007bff';
+                        polygonElement.style.strokeWidth = '1';
+                    }
+
+                    polygonElement.style.strokeWidth = '2';
+                    polygonElement.style.pointerEvents = 'none';
+                    polygonElement.style.zIndex = '2';
+
+                    mapState.svg.appendChild(polygonElement);
+                }
+
+                if (polygon[0] && polygon[0].length > 0) {
+                    const firstRing = polygon[0];
+                    const ringCenter = calculateRingCentroid(firstRing);
+                    const wgs84Center = webMercatorToWgs84(ringCenter.x, ringCenter.y);
+                    const centerPixel = wgs84ToGlobalPixel(wgs84Center.lon, wgs84Center.lat, mapState.zoom);
+
+                    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    circle.setAttribute('cx', centerPixel.x - mapState.centerPixelX + mapState.mapWidth/2);
+                    circle.setAttribute('cy', centerPixel.y - mapState.centerPixelY + mapState.mapHeight/2);
+                    circle.setAttribute('r', '3');
+                    circle.setAttribute('class', 'polygon-center');
+                    circle.style.fill = '#dc3545';
+                    circle.style.stroke = 'white';
+                    circle.style.strokeWidth = '1';
+                    circle.style.zIndex = '3';
+
+                    mapState.svg.appendChild(circle);
+                }
+            }
+        }
+
+        function calculateMultiPolygonCentroid(points) {
+            return calculateCentroid(points);
+        }
+
+        function calculateRingCentroid(ring) {
+            if (ring.length === 0) return { x: 0, y: 0 };
+
+            return calculateCentroid(ring);
+        }
+
+        function calculateCentroid(coordinates) {
+            if (coordinates.length === 0) return { x: 0, y: 0 };
+
+            let area = 0;
+            let centerX = 0;
+            let centerY = 0;
+            const n = coordinates.length;
+
+            for (let i = 0; i < n; i++) {
+                const current = coordinates[i];
+                const next = coordinates[(i + 1) % n];
+
+                const crossProduct = current.x * next.y - next.x * current.y;
+                area += crossProduct;
+                centerX += (current.x + next.x) * crossProduct;
+                centerY += (current.y + next.y) * crossProduct;
+            }
+
+            area /= 2;
+
+            if (Math.abs(area) < 1e-10) {
+                const sum = coordinates.reduce((acc, coord) => ({
+                    x: acc.x + coord.x,
+                    y: acc.y + coord.y
+                }), { x: 0, y: 0 });
+
+                return {
+                    x: sum.x / n,
+                    y: sum.y / n
+                };
+            }
+
+            const factor = 1 / (6 * area);
+            return {
+                x: centerX * factor,
+                y: centerY * factor
+            };
+        }
+
+        function updateTiles() {
+            if (!mapState.isInitialized) return;
+
+            document.querySelectorAll('.tile').forEach(tile => tile.remove());
+            mapState.tiles.clear();
+            mapState.failedTiles.clear();
+
+            const centerTile = globalPixelToTile(
+                mapState.centerPixelX,
+                mapState.centerPixelY
+            );
+
+            const clampedTile = clampTileCoords(centerTile.tileX, centerTile.tileY, mapState.zoom);
+
+            const tilesToLoad = 2;
+            for (let dx = -tilesToLoad; dx <= tilesToLoad; dx++) {
+                for (let dy = -tilesToLoad; dy <= tilesToLoad; dy++) {
+                    const tileX = clampedTile.tileX + dx;
+                    const tileY = clampedTile.tileY + dy;
+
+                    const clamped = clampTileCoords(tileX, tileY, mapState.zoom);
+                    loadTile(clamped.tileX, clamped.tileY, mapState.zoom);
+                }
+            }
+        }
+
+        function clampTileCoords(tileX, tileY, zoom) {
+            const maxTile = (1 << zoom) - 1;
+            return {
+                tileX: Math.max(0, Math.min(maxTile, tileX)),
+                tileY: Math.max(0, Math.min(maxTile, tileY))
+            };
+        }
+
+        function loadTile(tileX, tileY, zoom, retryCount = 0) {
+            const maxRetries = 1;
+            const key = `${zoom}/${tileX}/${tileY}`;
+
+            if (mapState.tiles.has(key)) {
+                const status = mapState.tiles.get(key);
+                if (status === 'loading' || status === 'loaded' || status === 'placeholder') {
+                    return;
+                }
+            }
+
+            if (mapState.tileCache.has(key)) {
+                const cachedData = mapState.tileCache.get(key);
+                if (cachedData && cachedData.data) {
+                    createTileImage(tileX, tileY, zoom, cachedData.data, cachedData.isPlaceholder || false);
+                    return;
+                }
+            }
+
+            mapState.tiles.set(key, 'loading');
+            mapState.failedTiles.delete(key);
+
+            const url = `/Map?handler=Tile&x=${tileX}&y=${tileY}&z=${zoom}`;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+            fetch(url, {
+                headers: {
+                    'Accept': 'image/png,image/webp,image/apng,*/*',
+                },
+                signal: controller.signal
+            })
+            .then(response => {
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    return response.blob();
+                } else {
+                    if (response.status === 404) {
+                        throw new Error('tile_not_found');
+                    } else if (response.status === 429) {
+                        console.error('Превышен лимит запросов к серверу OSM.');
+                        showTilePlaceholder(tileX, tileY, zoom);
+                        throw new Error('rate_limit_stop');
+                    } else if (response.status === 502 || response.status === 504) {
+                        throw new Error('server_error');
+                    } else {
+                        throw new Error(`http_error_${response.status}`);
+                    }
+                }
+            })
+            .then(blob => {
+                const reader = new FileReader();
+                reader.onloadend = function() {
+                    const base64data = reader.result;
+                    mapState.tileCache.set(key, {
+                        data: base64data,
+                        isPlaceholder: false,
+                        timestamp: Date.now()
+                    });
+                    mapState.failedTiles.delete(key);
+                    mapState.tiles.set(key, 'loaded');
+                    createTileImage(tileX, tileY, zoom, base64data, false);
+                };
+                reader.readAsDataURL(blob);
+            })
+            .catch(error => {
+                clearTimeout(timeoutId);
+
+                if (error.message === 'rate_limit_stop') {
+                    return;
+                }
+
+                console.warn(`Ошибка загрузки тайла ${key}:`, error.name, error.message);
+
+                const currentRetryCount = retryCount || (mapState.failedTiles.get(key) || 0);
+                const newRetryCount = currentRetryCount + 1;
+                mapState.failedTiles.set(key, newRetryCount);
+
+                if (newRetryCount <= maxRetries) {
+                    console.log(`Повторная попытка загрузки ${key} через 2 секунды`);
+                    setTimeout(() => {
+                        loadTile(tileX, tileY, zoom, newRetryCount);
+                    }, 2000);
+                } else {
+                    console.log(`Загрузка тайла ${key} не удалась, показываем placeholder`);
+                    mapState.tiles.delete(key);
+                    showTilePlaceholder(tileX, tileY, zoom);
+                }
+            });
+        }
+
+        function showTilePlaceholder(tileX, tileY, zoom) {
+            const key = `${zoom}/${tileX}/${tileY}`;
+
+            if (mapState.tileCache.has(key)) {
+                const cached = mapState.tileCache.get(key);
+                if (cached && cached.isPlaceholder) {
+                    createTileImage(tileX, tileY, zoom, cached.data, true);
+                    return;
+                }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = mapState.tileSize;
+            canvas.height = mapState.tileSize;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(0, 0, mapState.tileSize, mapState.tileSize);
+
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= mapState.tileSize; i += 32) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, mapState.tileSize);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(mapState.tileSize, i);
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = '#999';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${zoom}/${tileX}/${tileY}`, mapState.tileSize/2, mapState.tileSize/2);
+
+            ctx.fillStyle = '#ff6b6b';
+            ctx.beginPath();
+            ctx.arc(mapState.tileSize/2, mapState.tileSize/3, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText('!', mapState.tileSize/2, mapState.tileSize/3 + 4);
+
+            const dataUrl = canvas.toDataURL();
+            mapState.tileCache.set(key, {
+                data: dataUrl,
+                isPlaceholder: true,
+                timestamp: Date.now()
+            });
+
+            mapState.tiles.set(key, 'placeholder');
+            createTileImage(tileX, tileY, zoom, dataUrl, true);
+        }
+
+        function createTileImage(tileX, tileY, zoom, dataUrl, isPlaceholder = false) {
+            const key = `${zoom}/${tileX}/${tileY}`;
+
+            const existingImg = document.querySelector(`.tile[data-key="${key}"]`);
+            if (existingImg) {
+                if (existingImg.dataset.placeholder === 'true' && !isPlaceholder) {
+                    existingImg.src = dataUrl;
+                    existingImg.dataset.placeholder = 'false';
+                    existingImg.style.opacity = '1';
+                }
+                return;
+            }
+
+            const img = new Image();
+            img.className = 'tile';
+            img.dataset.key = key;
+            img.dataset.placeholder = isPlaceholder.toString();
+            img.style.position = 'absolute';
+            img.style.left = `${(tileX * mapState.tileSize) - mapState.centerPixelX + mapState.mapWidth/2}px`;
+            img.style.top = `${(tileY * mapState.tileSize) - mapState.centerPixelY + mapState.mapHeight/2}px`;
+            img.style.width = `${mapState.tileSize}px`;
+            img.style.height = `${mapState.tileSize}px`;
+            img.style.zIndex = '1';
+
+            if (isPlaceholder) {
+                img.style.opacity = '0.7';
+                img.style.filter = 'grayscale(50%)';
+            }
+
+            img.onload = function() {
+                if (isPlaceholder) {
+                    img.style.transition = 'opacity 0.3s';
+                }
+            };
+
+            img.onerror = function() {
+                console.error(`Ошибка загрузки изображения тайла: ${key}`);
+                mapState.tileCache.delete(key);
+                mapState.tiles.delete(key);
+                img.remove();
+            };
+
+            img.src = dataUrl;
+            document.getElementById('map').appendChild(img);
+        }
+
+        function startDragging(e) {
+            if (!mapState.isInitialized) return;
+
+            e.preventDefault();
+            mapState.isDragging = true;
+            mapState.lastMouseX = e.clientX;
+            mapState.lastMouseY = e.clientY;
+            document.getElementById('map').style.cursor = 'grabbing';
+        }
+
+        function dragMap(e) {
+            if (!mapState.isInitialized || !mapState.isDragging) return;
+
+            const deltaX = e.clientX - mapState.lastMouseX;
+            const deltaY = e.clientY - mapState.lastMouseY;
+
+            mapState.centerPixelX -= deltaX;
+            mapState.centerPixelY -= deltaY;
+
+            mapState.lastMouseX = e.clientX;
+            mapState.lastMouseY = e.clientY;
+
+            updateTilePositions();
+            if (config.hasData) {
+                drawMultiPolygon(config.multiPolygonCoordinates);
+            }
+
+            updateMapInfo();
+            checkForNewTiles();
+        }
+
+        function stopDragging() {
+            mapState.isDragging = false;
+            document.getElementById('map').style.cursor = 'grab';
+        }
+
+        function updateTilePositions() {
+            document.querySelectorAll('.tile').forEach(img => {
+                const key = img.dataset.key;
+                if (key) {
+                    const match = key.match(/(\d+)\/(\d+)\/(\d+)/);
+                    if (match) {
+                        const zoom = parseInt(match[1]);
+                        const tileX = parseInt(match[2]);
+                        const tileY = parseInt(match[3]);
+
+                        img.style.left = `${(tileX * mapState.tileSize) - mapState.centerPixelX + mapState.mapWidth/2}px`;
+                        img.style.top = `${(tileY * mapState.tileSize) - mapState.centerPixelY + mapState.mapHeight/2}px`;
+                    }
+                }
+            });
+        }
+
+        function checkForNewTiles() {
+            const centerTile = globalPixelToTile(mapState.centerPixelX, mapState.centerPixelY);
+
+            const visibleTiles = new Set();
+            document.querySelectorAll('.tile').forEach(img => {
+                if (img.dataset.key) {
+                    visibleTiles.add(img.dataset.key);
+                }
+            });
+
+            const tilesToLoad = 2;
+            for (let dx = -tilesToLoad; dx <= tilesToLoad; dx++) {
+                for (let dy = -tilesToLoad; dy <= tilesToLoad; dy++) {
+                    const tileX = centerTile.tileX + dx;
+                    const tileY = centerTile.tileY + dy;
+                    const key = `${mapState.zoom}/${tileX}/${tileY}`;
+
+                    if (!visibleTiles.has(key)) {
+                        const clamped = clampTileCoords(tileX, tileY, mapState.zoom);
+                        loadTile(clamped.tileX, clamped.tileY, mapState.zoom);
+                    }
+                }
+            }
+        }
+
+        function handleZoom(e) {
+            if (!mapState.isInitialized) return;
+
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -1 : 1;
+            changeZoom(delta);
+        }
+
+        function changeZoom(delta) {
+            if (!mapState.isInitialized) return;
+
+            let newZoom = mapState.zoom + delta;
+            newZoom = Math.max(4, Math.min(18, newZoom));
+
+            if (newZoom !== mapState.zoom) {
+                setZoom(newZoom);
+            }
+        }
+
+        function setZoom(value) {
+            if (!mapState.isInitialized) return;
+
+            value = parseInt(value);
+            if (value < 4 || value > 18 || isNaN(value)) return;
+
+            const oldZoom = mapState.zoom;
+            mapState.zoom = value;
+            document.getElementById('zoomInput').value = value;
+
+            const scale = Math.pow(2, value - oldZoom);
+            mapState.centerPixelX *= scale;
+            mapState.centerPixelY *= scale;
+
+            updateTiles();
+            if (config.hasData) {
+                drawMultiPolygon(config.multiPolygonCoordinates);
+            }
+            updateMapInfo();
+        }
+
+        function updateMapInfo() {
+            const centerTile = globalPixelToTile(mapState.centerPixelX, mapState.centerPixelY);
+            document.getElementById('tileInfo').textContent =
+                `${centerTile.tileX}, ${centerTile.tileY}, ${mapState.zoom}`;
+
+            const wgs84 = pixelToWgs84(
+                mapState.centerPixelX,
+                mapState.centerPixelY,
+                mapState.zoom
+            );
+            document.getElementById('coordinates').textContent =
+                `${wgs84.lon.toFixed(6)}, ${wgs84.lat.toFixed(6)}`;
+        }
+
+        function webMercatorToWgs84(x, y) {
+            const earthRadius = 6378137;
+            const originShift = 2 * Math.PI * earthRadius / 2;
+
+            const lon = (x / originShift) * 180.0;
+            let lat = (y / originShift) * 180.0;
+            lat = 180.0 / Math.PI * (2 * Math.atan(Math.exp(lat * Math.PI / 180.0)) - Math.PI / 2.0);
+
+            return { lon, lat };
+        }
+
+        function wgs84ToGlobalPixel(lon, lat, zoom) {
+            const x = (lon + 180) / 360 * Math.pow(2, zoom);
+            const sinLat = Math.sin(lat * Math.PI / 180);
+            const y = (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * Math.pow(2, zoom);
+
+            return {
+                x: x * mapState.tileSize,
+                y: y * mapState.tileSize
+            };
+        }
+
+        function globalPixelToTile(pixelX, pixelY) {
+            return {
+                tileX: Math.floor(pixelX / mapState.tileSize),
+                tileY: Math.floor(pixelY / mapState.tileSize)
+            };
+        }
+
+        function pixelToWgs84(pixelX, pixelY, zoom) {
+            const x = pixelX / mapState.tileSize / Math.pow(2, zoom);
+            const y = pixelY / mapState.tileSize / Math.pow(2, zoom);
+
+            const lon = x * 360 - 180;
+            const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI;
+
+            return { lon, lat };
+        }
+
+        function resetMap() {
+            if (mapState.isInitialized) {
+                document.querySelectorAll('.tile').forEach(tile => tile.remove());
+                const polygons = mapState.svg.querySelectorAll('.polygon, .polygon-center, .polygon-hole');
+                polygons.forEach(el => el.remove());
+
+                mapState.tiles.clear();
+                mapState.tileCache.clear();
+                mapState.failedTiles.clear();
+
+                mapState.centerPixelX = 0;
+                mapState.centerPixelY = 0;
+                mapState.zoom = 15;
+                document.getElementById('zoomInput').value = '15';
+
+                document.getElementById('mapPlaceholder').style.display = 'flex';
+                document.getElementById('mapInfo').classList.add('d-none');
+
+                updateMapInfo();
+            }
+        }
+
+        function reloadTiles() {
+            if (mapState.isInitialized) {
+                document.querySelectorAll('.tile').forEach(tile => tile.remove());
+
+                mapState.tileCache.clear();
+                mapState.tiles.clear();
+                mapState.failedTiles.clear();
+
+                updateTiles();
+
+                if (config.hasData) {
+                    drawMultiPolygon(config.multiPolygonCoordinates);
+                }
+            }
+        }
+
+        document.getElementById('cadastralNumber')?.addEventListener('input', function(e) {
+            this.value = this.value.replace(/\s+/g, '');
+        });
+
+        document.getElementById('searchForm')?.addEventListener('submit', function(e) {
+            const numberInput = document.getElementById('cadastralNumber');
+            if (numberInput) {
+                numberInput.value = numberInput.value.replace(/\s+/g, '');
+            }
+
+            const searchButton = document.getElementById('searchButton');
+            if (searchButton) {
+                searchButton.disabled = true;
+                searchButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Поиск...';
+            }
+        });
+
+        function handleCadastralNumberInput(input) {
+            const searchType = parseInt(document.getElementById('searchType').value);
+            formatCadastralNumber(input, searchType);
+        }
+
+        function handleCadastralNumberPaste(e) {
+            e.preventDefault();
+
+            const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+            if (!pastedText) return;
+
+            const input = e.target;
+            const searchType = parseInt(document.getElementById('searchType').value);
+
+            const cleanedText = pastedText.replace(/[^\d:.-]/g, '');
+
+            const startPos = input.selectionStart;
+            const endPos = input.selectionEnd;
+            const currentValue = input.value;
+
+            const newValue = currentValue.substring(0, startPos) +
+                            cleanedText +
+                            currentValue.substring(endPos);
+
+            input.value = newValue;
+
+            formatCadastralNumber(input, searchType);
+
+            setTimeout(() => {
+                const newCursorPos = startPos + cleanedText.length;
+                input.setSelectionRange(newCursorPos, newCursorPos);
+            }, 0);
+        }
+
+        function allowCadastralNumberKeys(e) {
+            const allowedKeys = [
+                '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                ':', '.', '-'
+            ];
+
+            const controlKeys = [
+                'Backspace', 'Delete', 'Tab', 'Escape', 'Enter',
+                'Home', 'End', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'
+            ];
+
+            const key = e.key;
+
+            if (e.ctrlKey || e.metaKey) {
+                return true;
+            }
+
+            if (controlKeys.includes(key)) {
+                return true;
+            }
+
+            if (allowedKeys.includes(key)) {
+                return true;
+            }
+
+            e.preventDefault();
+            return false;
+        }
+
+        function validateCadastralNumber(input, searchType) {
+            const value = input.value.trim();
+            let pattern = '';
+            let errorMessage = '';
+            let isValid = false;
+
+            switch (searchType) {
+                case 1:
+                    pattern = /^\d{2}:\d{2}:\d{1,7}:\d{1,4}$/;
+                    errorMessage = 'Неверный формат. Примеры: 23:19:0202007:18, 77:05:0009005:1023';
+                    isValid = pattern.test(value);
+                    break;
+                case 2:
+                    pattern = /^\d{2}(?::\d{2}(?::\d{1,7})?)?$/;
+                    errorMessage = 'Неверный формат. Примеры: 23, 23:19, 23:19:0202007';
+                    isValid = pattern.test(value);
+                    break;
+                case 4:
+                case 5:
+                case 7:
+                    const basePattern = /^\d{2}:\d{2}-\d+(\.\d+)?$/;
+                    if (basePattern.test(value)) {
+                        const match = value.match(/^(\d{2}):(\d{2})-(\d+)(?:\.(\d+))?$/);
+                        if (match) {
+                            const beforeDot = match[3] || '';
+                            if (beforeDot.length >= 1) {
+                                isValid = true;
+                            }
+                        }
+                    }
+                    const exampleType = searchType === 4 ? '23:19-4.18, 23:19-43.21' :
+                                      searchType === 5 ? '61:00-6.569, 61:00-12.34' :
+                                      '09:07-7.108, 09:07-15.2';
+                    errorMessage = `Неверный формат. Примеры: ${exampleType}`;
+                    break;
+            }
+
+            const errorElement = document.getElementById('cadastralNumberError');
+
+            if (value === '') {
+                input.classList.remove('is-invalid', 'is-valid');
+                if (errorElement) errorElement.textContent = '';
+            } else if (isValid) {
+                input.classList.remove('is-invalid');
+                input.classList.add('is-valid');
+                if (errorElement) errorElement.textContent = '';
+            } else {
+                input.classList.remove('is-valid');
+                input.classList.add('is-invalid');
+                if (errorElement) {
+                    errorElement.textContent = errorMessage;
+                }
+            }
+        }
+
+        function formatCadastralNumber(input, searchType) {
+            const cursorPos = input.selectionStart;
+            const oldValue = input.value;
+
+            const digits = input.value.replace(/\D/g, '');
+
+            let formatted = '';
+            let needsFormatting = false;
+
+            switch (searchType) {
+                case 1:
+                    formatted = autoFormatRealEstate(digits, oldValue, cursorPos);
+                    needsFormatting = true;
+                    break;
+                case 2:
+                    formatted = autoFormatCadastralDivision(digits, oldValue, cursorPos);
+                    needsFormatting = true;
+                    break;
+                case 4:
+                case 5:
+                case 7:
+                    formatted = autoFormatWithHyphen(digits, oldValue, cursorPos);
+                    needsFormatting = true;
+                    break;
+                default:
+                    formatted = input.value;
+            }
+
+            if (needsFormatting && formatted !== oldValue) {
+                input.value = formatted;
+                restoreCursorPositionWithAutoFormat(input, oldValue, cursorPos, formatted, searchType);
+            }
+
+            validateCadastralNumber(input, searchType);
+        }
+
+        function autoFormatRealEstate(digits, oldValue, cursorPos) {
+            if (digits.length === 0) return '';
+
+            let result = '';
+            let digitIndex = 0;
+
+            const pattern = [2, 2, 7, 4];
+
+            for (let i = 0; i < pattern.length; i++) {
+                if (digitIndex >= digits.length) break;
+
+                const partLength = pattern[i];
+                const part = digits.substr(digitIndex, partLength);
+
+                if (part.length > 0) {
+                    if (i > 0) result += ':';
+                    result += part;
+                    digitIndex += part.length;
+                }
+            }
+
+            if (digitIndex < digits.length) {
+                if (result.length > 0) result += ':';
+                result += digits.substr(digitIndex);
+            }
+
+            return result;
+        }
+
+        function autoFormatCadastralDivision(digits, oldValue, cursorPos) {
+            if (digits.length === 0) return '';
+
+            if (digits.length <= 2) {
+                return digits;
+            } else if (digits.length <= 4) {
+                return digits.substr(0, 2) + ':' + digits.substr(2);
+            } else {
+                return digits.substr(0, 2) + ':' + digits.substr(2, 2) + ':' + digits.substr(4, 7);
+            }
+        }
+
+        function autoFormatWithHyphen(digits, oldValue, cursorPos) {
+            if (digits.length === 0) return '';
+
+            if (digits.length <= 2) {
+                return digits;
+            } else if (digits.length <= 4) {
+                return digits.substr(0, 2) + ':' + digits.substr(2);
+            } else {
+                const mainPart = digits.substr(0, 2) + ':' + digits.substr(2, 2) + '-';
+                const afterDash = digits.substr(4);
+
+                const hadDot = oldValue.includes('.');
+                const dotPositionInOldValue = oldValue.indexOf('.');
+
+                let dotPosition = -1;
+                if (afterDash.length >= 1) {
+                    if (hadDot && dotPositionInOldValue !== -1) {
+                        const digitsBeforeOldDot = oldValue.substring(0, dotPositionInOldValue).replace(/\D/g, '').length;
+                        const relativeDotPos = digitsBeforeOldDot - 4;
+                        if (relativeDotPos > 0 && relativeDotPos <= afterDash.length) {
+                            dotPosition = relativeDotPos;
+                        } else {
+                            dotPosition = 1;
+                        }
+                    } else {
+                        dotPosition = 1;
+                    }
+                }
+
+                let afterDashFormatted = '';
+                if (dotPosition > 0 && dotPosition <= afterDash.length) {
+                    const beforeDot = afterDash.substr(0, dotPosition);
+                    const afterDot = afterDash.substr(dotPosition);
+                    afterDashFormatted = beforeDot + (afterDot ? '.' + afterDot : '');
+                } else {
+                    afterDashFormatted = afterDash;
+                    if (afterDash.length > 1) {
+                        afterDashFormatted = afterDash.substr(0, 1) + '.' + afterDash.substr(1);
+                    }
+                }
+
+                return mainPart + afterDashFormatted;
+            }
+        }
+
+        function restoreCursorPositionWithAutoFormat(input, oldValue, oldCursorPos, newValue, searchType) {
+            setTimeout(() => {
+                const digitsBeforeCursor = oldValue.substring(0, oldCursorPos).replace(/\D/g, '');
+                const digitIndex = digitsBeforeCursor.length;
+
+                let newPos = 0;
+                let foundDigits = 0;
+
+                for (let i = 0; i < newValue.length && foundDigits < digitIndex; i++) {
+                    if (/\d/.test(newValue.charAt(i))) {
+                        foundDigits++;
+                    }
+                    newPos = i + 1;
+                }
+
+                if (foundDigits < digitIndex) {
+                    newPos = newValue.length;
+                }
+
+                if ((searchType === 4 || searchType === 5 || searchType === 7) &&
+                    newPos < newValue.length && newValue.charAt(newPos) === '.') {
+                    newPos++;
+                }
+
+                input.setSelectionRange(newPos, newPos);
+            }, 0);
+        }
+
+        function updateExamples(searchType) {
+            const examplesList = document.getElementById('examplesList');
+            if (!examplesList) return;
+
+            const examples = getExamplesByType(searchType);
+            examplesList.innerHTML = examples;
+
+            setTimeout(() => {
+                document.querySelectorAll('.example-item').forEach(item => {
+                    item.addEventListener('click', function() {
+                        const numberInput = document.getElementById('cadastralNumber');
+                        const exampleText = this.textContent.trim();
+
+                        numberInput.value = exampleText;
+
+                        formatCadastralNumber(numberInput, searchType);
+
+                        validateCadastralNumber(numberInput, searchType);
+
+                        numberInput.focus();
+                    });
+                });
+            }, 0);
+        }
+
+        function getExamplesByType(searchType) {
+            const examples = {
+                1: `<div class="example-item">23:19:0202007:18</div>
+                     <div class="example-item">61:01:0600015:36</div>
+                     <div class="example-item">23:14:0000000:1107</div>`,
+
+                2: `<div class="example-item">23</div>
+                     <div class="example-item">23:19</div>
+                     <div class="example-item">23:19:0202007</div>
+                     <div class="example-item">61:01:0600015</div>
+                     <div class="example-item">66:41</div>`,
+
+                4: `<div class="example-item">23:19-4.18</div>
+                     <div class="example-item">59:34-4.147</div>
+                     <div class="example-item">77:10-3.2</div>
+                     <div class="example-item">50:08-4.131</div>
+                     <div class="example-item">50:09-4.2</div>`,
+
+                5: `<div class="example-item">61:00-6.569</div>
+                     <div class="example-item">34:34-6.3696</div>
+                     <div class="example-item">15:01-6.76</div>
+                     <div class="example-item">34:00-6.568</div>
+                     <div class="example-item">86:04-6.1328</div>
+                     <div class="example-item">51:00-12.2</div>`,
+
+                7: `<div class="example-item">09:07-7.108</div>
+                     <div class="example-item">07:11-7.85</div>
+                     <div class="example-item">06:07-7.17</div>
+                     <div class="example-item">06:07-7.1</div>`
+            };
+
+            return examples[searchType] || '<div class="example-item">Введите кадастровый номер</div>';
+        }
+
+        function updateFormatDescription(searchType) {
+            const descriptions = {
+                1: '<strong>Формат:</strong> РР:ОО:РРРРРРР:УУУУ<br><small>где: РР - регион, ОО - округ, РРРРРРР - район, УУУУ - участок</small>',
+                2: '<strong>Формат:</strong> РР | РР:ОО | РР:ОО:РРРРРРР<br><small>где: РР - регион, ОО - округ, РРРРРРР - район</small>',
+                4: '<strong>Формат:</strong> РР:КК-Н.П<br><small>где: РР - регион, КК - код, Н - номер, П - подномер</small>',
+                5: '<strong>Формат:</strong> РР:КК-Н.П<br><small>где: РР - регион, КК - код, Н - номер, П - подномер</small>',
+                7: '<strong>Формат:</strong> РР:КК-Н.П<br><small>где: РР - регион, КК - код, Н - номер, П - подномер</small>'
+            };
+
+            const formatElement = document.getElementById('formatDescription');
+            if (formatElement) {
+                const description = descriptions[searchType] || 'Введите кадастровый номер';
+                formatElement.innerHTML = `
+                    <div class="mb-2">${description}</div>
+                    <div id="examplesContainer" class="small text-muted">
+                        <strong>Примеры:</strong>
+                        <div id="examplesList" class="mt-1"></div>
+                    </div>
+                `;
+
+                updateExamples(searchType);
+            }
+        }
+
+        function updatePlaceholder(input, searchType) {
+            const placeholders = {
+                1: '23:19:0202007:18',
+                2: '23 или 23:19 или 23:19:0202007',
+                4: '23:19-4.18',
+                5: '61:00-6.569',
+                7: '09:07-7.108'
+            };
+
+            input.placeholder = placeholders[searchType] || 'Введите номер';
+        }
+
+        document.getElementById('searchType').addEventListener('change', function() {
+            const numberInput = document.getElementById('cadastralNumber');
+            const searchType = parseInt(this.value);
+
+            const currentDigits = numberInput.value.replace(/\D/g, '');
+
+            updatePlaceholder(numberInput, searchType);
+            updateFormatDescription(searchType);
+
+            if (currentDigits) {
+                numberInput.value = '';
+
+                let formatted = '';
+                switch (searchType) {
+                    case 1:
+                        formatted = autoFormatRealEstate(currentDigits, '', 0);
+                        break;
+                    case 2:
+                        formatted = autoFormatCadastralDivision(currentDigits, '', 0);
+                        break;
+                    case 4:
+                    case 5:
+                    case 7:
+                        formatted = autoFormatWithHyphen(currentDigits, '', 0);
+                        break;
+                }
+
+                numberInput.value = formatted;
+                validateCadastralNumber(numberInput, searchType);
+            } else {
+                numberInput.classList.remove('is-invalid', 'is-valid');
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchTypeSelect = document.getElementById('searchType');
+            const numberInput = document.getElementById('cadastralNumber');
+
+            if (searchTypeSelect && numberInput) {
+                const initialSearchType = parseInt(searchTypeSelect.value);
+                updatePlaceholder(numberInput, initialSearchType);
+                updateFormatDescription(initialSearchType);
+
+                if (numberInput.value) {
+                    formatCadastralNumber(numberInput, initialSearchType);
+                }
+            }
+        });
+
+        function insertExample(example) {
+            const numberInput = document.getElementById('cadastralNumber');
+            const searchType = parseInt(document.getElementById('searchType').value);
+
+            numberInput.value = example;
+            formatCadastralNumber(numberInput, searchType);
+            numberInput.focus();
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mapContainer = document.getElementById('mapContainer');
+            const toggleIcon = document.getElementById('toggleIcon');
+
+            sidebar.classList.toggle('collapsed');
+
+            if (sidebar.classList.contains('collapsed')) {
+                toggleIcon.className = 'fas fa-chevron-right';
+                // Обновить размер карты при скрытии панели
+                setTimeout(() => {
+                    if (mapState.isInitialized) {
+                        mapState.mapWidth = document.getElementById('map').offsetWidth;
+                        mapState.mapHeight = document.getElementById('map').offsetHeight;
+                        updateTilePositions();
+                        if (config.multiPolygonCoordinates.length > 0) {
+                            drawMultiPolygon(config.multiPolygonCoordinates);
+                        }
+                    }
+                }, 1000);
+            } else {
+                toggleIcon.className = 'fas fa-chevron-left';
+                // Обновить размер карты при показе панели
+                setTimeout(() => {
+                    if (mapState.isInitialized) {
+                        mapState.mapWidth = document.getElementById('map').offsetWidth;
+                        mapState.mapHeight = document.getElementById('map').offsetHeight;
+                        updateTilePositions();
+                        if (config.multiPolygonCoordinates.length > 0) {
+                            drawMultiPolygon(config.multiPolygonCoordinates);
+                        }
+                    }
+                }, 1000);
+            }
+        }
+
+        // Обновить функцию resize для корректной работы с toggle
+        window.addEventListener('resize', function() {
+            if (mapState.isInitialized) {
+                mapState.mapWidth = document.getElementById('map').offsetWidth;
+                mapState.mapHeight = document.getElementById('map').offsetHeight;
+                updateTilePositions();
+                if (config.multiPolygonCoordinates.length > 0) {
+                    drawMultiPolygon(config.multiPolygonCoordinates);
+                }
+            }
+        });
+    </script>
+}
+
+@functions {
+    private string GetPlaceholderForType(SearchType searchType)
+    {
+        return searchType switch
+        {
+            SearchType.RealEstate => "23:19:0202007:18",
+            SearchType.CadastralDivision => "23 или 23:19 или 23:19:0202007",
+            SearchType.AdministrativeTerritorialUnits => "23:19-4.18",
+            SearchType.ZOUIT => "61:00-6.569",
+            SearchType.TerritorialZones => "09:07-7.108",
+            _ => "Введите номер"
+        };
+    }
+
+    private string GetFormatDescription(SearchType searchType)
+    {
+        return searchType switch
+        {
+            SearchType.RealEstate => "<strong>Формат:</strong> РР:ОО:РРРРРРР:УУУУ",
+            SearchType.CadastralDivision => "<strong>Формат:</strong> РР | РР:ОО | РР:ОО:РРРРРРР",
+            SearchType.AdministrativeTerritorialUnits => "<strong>Формат:</strong> РР:КК-Н.П",
+            SearchType.ZOUIT => "<strong>Формат:</strong> РР:КК-Н.П",
+            SearchType.TerritorialZones => "<strong>Формат:</strong> РР:КК-Н.П",
+            _ => "Введите кадастровый номер"
+        };
+    }
+
+    private string GetExamplesForType(SearchType searchType)
+    {
+        return searchType switch
+        {
+            SearchType.RealEstate =>
+                @"<div class='example-item'>23:19:0202007:18</div>",
+
+            SearchType.CadastralDivision =>
+                @"<div class='example-item'>23</div>
+                  <div class='example-item'>23:19</div>
+                  <div class='example-item'>23:19:0202007</div>",
+
+            SearchType.AdministrativeTerritorialUnits =>
+                @"<div class='example-item'>23:19-4.18</div>",
+
+            SearchType.ZOUIT =>
+                @"<div class='example-item'>61:00-6.569</div>",
+
+            SearchType.TerritorialZones =>
+                @"<div class='example-item'>09:07-7.108</div>",
+
+            _ => "<div class='example-item'>Введите кадастровый номер</div>"
+        };
+    }
+}
